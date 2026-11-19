@@ -31,6 +31,29 @@ const inputClass =
 const toList = (data, key) =>
     Array.isArray(data) ? data : data?.results || data?.[key] || [];
 
+const getApiErrorMessage = (error) => {
+    const data = error?.response?.data;
+
+    if (!data) {
+        return error?.message || "Something went wrong. Please try again.";
+    }
+
+    if (typeof data === "string") return data;
+    if (data.detail) return data.detail;
+
+    return Object.entries(data)
+        .map(([field, messages]) => {
+            const message = Array.isArray(messages)
+                ? messages.join(" ")
+                : typeof messages === "string"
+                    ? messages
+                    : JSON.stringify(messages);
+
+            return `${field}: ${message}`;
+        })
+        .join(" | ") || "Unable to complete the request.";
+};
+
 const formatDate = (date) => {
     if (!date) return "Not available";
 
@@ -265,8 +288,10 @@ function AdminDashboard() {
         try {
             const response = await api.get("/blogs/admin/likes/");
             setLikesData({
-                total_likes: response.data.total_likes || 0,
-                blogs: response.data.blogs || [],
+                total_likes: Number(response.data?.total_likes || 0),
+                blogs: Array.isArray(response.data?.blogs)
+                    ? response.data.blogs
+                    : [],
             });
         } catch (error) {
             console.error("Failed to load likes:", error);
@@ -332,11 +357,16 @@ function AdminDashboard() {
         }));
     };
 
-    const handleSubmit = async (event) => {
-        event.preventDefault();
+    const handleSubmit = async (e) => {
+        e.preventDefault();
 
-        if (!form.title.trim() || !form.content.trim()) {
-            toast.error("Please enter both title and content.");
+        if (saving) return;
+
+        const title = form.title.trim();
+        const content = form.content.trim();
+
+        if (!title || !content) {
+            toast.error("Please enter both the article title and content.");
             return;
         }
 
@@ -344,33 +374,43 @@ function AdminDashboard() {
             setSaving(true);
 
             const formData = new FormData();
-            formData.append("title", form.title.trim());
-            formData.append("content", form.content);
+            formData.append("title", title);
+            formData.append("content", content);
             formData.append("status", form.status);
 
-            if (form.featured_image) {
+            if (form.featured_image instanceof File) {
                 formData.append("featured_image", form.featured_image);
             }
 
+            const config = {
+                headers: {
+                    // Overrides a global application/json default.
+                    // Axios/browser adds the multipart boundary.
+                    "Content-Type": "multipart/form-data",
+                },
+            };
+
             if (editingBlog) {
-                await api.patch(`/blogs/admin/${editingBlog.slug}/update/`, formData);
+                await api.patch(
+                    `/blogs/admin/${editingBlog.slug}/update/`,
+                    formData,
+                    config
+                );
                 toast.success("Article updated successfully.");
             } else {
-                await api.post("/blogs/admin/create/", formData);
+                await api.post("/blogs/admin/create/", formData, config);
                 toast.success("Article created successfully.");
             }
 
             closeForm();
             await fetchBlogs();
         } catch (error) {
-            console.error("Failed to save article:", error);
-
-            const errorData = error.response?.data;
-            toast.error(
-                errorData?.detail ||
-                    errorData?.message ||
-                    "Unable to save article. Please check your information."
+            console.error(
+                "Blog submission failed:",
+                error.response?.status,
+                error.response?.data || error
             );
+            toast.error(getApiErrorMessage(error));
         } finally {
             setSaving(false);
         }
