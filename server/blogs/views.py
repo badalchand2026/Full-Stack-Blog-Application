@@ -25,6 +25,8 @@ from rest_framework import status
 from .models import Like
 
 from .models import Blog, Comment, Like
+from django.db.models import Count
+
 
 
 # Public API: View published blogs
@@ -210,3 +212,55 @@ class BlogLikeCountView(APIView):
             },
             status=status.HTTP_200_OK
         )
+
+
+
+
+# ==========================================
+# ADMIN: LIKE MANAGEMENT
+# ==========================================
+
+
+class AdminLikeOverviewView(APIView):
+    permission_classes = [IsAuthenticated, IsAdminUser]
+
+    def get(self, request):
+        blogs = Blog.objects.annotate(
+            likes_count=Count("likes")
+        ).values(
+            "id",
+            "title",
+            "slug",
+            "likes_count"
+        )
+
+        total_likes = Like.objects.count()
+
+        return Response(
+            {
+                "success": True,
+                "total_likes": total_likes,
+                "blogs": list(blogs)
+            },
+            status=status.HTTP_200_OK
+        )
+
+
+# ==========================================
+# ADMIN: COMMENT MANAGEMENT
+# ==========================================
+
+class AdminCommentListView(generics.ListAPIView):
+    serializer_class = CommentSerializer
+    permission_classes = [IsAuthenticated, IsAdminUser]
+
+    queryset = Comment.objects.select_related(
+        "author",
+        "blog"
+    ).all()
+
+
+class AdminCommentDeleteView(generics.DestroyAPIView):
+    permission_classes = [IsAuthenticated, IsAdminUser]
+
+    queryset = Comment.objects.all()
