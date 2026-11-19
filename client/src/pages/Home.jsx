@@ -1,186 +1,268 @@
-import { Link } from "react-router-dom";
-import { ArrowRight, Clock3 } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Link, useSearchParams } from "react-router-dom";
+import { toast } from "react-toastify";
 
-const articles = [
-    {
-        id: 1,
-        title: "Getting Started with Modern Web Development",
-        description: "Learn the fundamentals of modern web development and how to build better digital experiences.",
-        category: "Technology",
-        date: "November 18, 2026",
-        readTime: "6 min read",
-        image: "https://images.unsplash.com/photo-1498050108023-c5249f4df085?w=1200",
-        slug: "getting-started-with-modern-web-development"
-    },
-    {
-        id: 2,
-        title: "The Art of Building Better User Experiences",
-        description: "See how thoughtful design and user-focused thinking create meaningful products.",
-        category: "Design",
-        date: "November 16, 2026",
-        readTime: "5 min read",
-        image: "https://images.unsplash.com/photo-1499951360447-b19be8fe80f5?w=900",
-        slug: "building-better-user-experiences"
-    },
-    {
-        id: 3,
-        title: "Turning Creative Ideas Into Real Projects",
-        description: "Turn your ideas into practical projects through planning and consistency.",
-        category: "Productivity",
-        date: "November 14, 2026",
-        readTime: "4 min read",
-        image: "https://images.unsplash.com/photo-1454165804606-c3d57bc86b40?w=900",
-        slug: "turning-ideas-into-projects"
-    }
-];
+import api from "../services/api";
 
-const categories = [
-    { name: "Technology", text: "Code, tools and the web" },
-    { name: "Design", text: "Interfaces and creative work" },
-    { name: "Business", text: "Ideas for work and growth" },
-    { name: "Lifestyle", text: "Habits and everyday life" }
-];
+/* ---------- Helpers ---------- */
 
-function Meta({ article }) {
+function getExcerpt(content, maxLength = 260) {
+    if (!content) return "";
+
+    const plainText = content.replace(/<[^>]*>/g, "").trim();
+
+    return plainText.length <= maxLength
+        ? plainText
+        : `${plainText.slice(0, maxLength).trim()}…`;
+}
+
+function formatDate(date) {
+    if (!date) return "Recently";
+
+    return new Date(date).toLocaleDateString("en-US", {
+        year: "numeric",
+        month: "long",
+        day: "numeric",
+    });
+}
+
+// Works whether the API sends `category: "art"` or `category: { name: "Art" }`
+function getCategory(article) {
+    const value = article.category ?? article.cat;
+
+    if (!value) return "";
+
+    return (typeof value === "object" ? value.name : value) || "";
+}
+
+/* ---------- Post row ---------- */
+
+function PostRow({ article, index }) {
+    const reversed = index % 2 === 1;
+
     return (
-        <p className="flex items-center gap-2 text-sm text-stone-500">
-            {article.date}
-            <span aria-hidden="true">•</span>
-            <Clock3 size={14} /> {article.readTime}
-        </p>
+        <article
+            className={`flex flex-col md:flex-row ${
+                reversed ? "md:flex-row-reverse" : ""
+            } items-center gap-10 md:gap-20 py-12 md:py-16`}
+        >
+            {/* Image with offset color block */}
+            <div className="relative w-full md:flex-1 px-4">
+                <div
+                    aria-hidden="true"
+                    className={`absolute inset-x-4 inset-y-0 bg-teal-100 translate-y-4 ${
+                        reversed ? "translate-x-4" : "-translate-x-4"
+                    }`}
+                />
+
+                {article.featured_image ? (
+                    <img
+                        src={article.featured_image}
+                        alt=""
+                        className="relative w-full h-64 md:h-96 object-cover"
+                    />
+                ) : (
+                    <div className="relative w-full h-64 md:h-96 bg-stone-200" />
+                )}
+            </div>
+
+            {/* Text */}
+            <div className="w-full md:flex-1">
+                {getCategory(article) && (
+                    <p className="text-sm font-medium text-teal-700 mb-2">
+                        {getCategory(article)}
+                    </p>
+                )}
+
+                <Link to={`/blogs/${article.slug}`}>
+                    <h2 className="text-3xl md:text-4xl font-bold text-stone-900 leading-tight hover:text-teal-700 transition">
+                        {article.title}
+                    </h2>
+                </Link>
+
+                <p className="mt-5 text-stone-600 leading-7">
+                    {getExcerpt(article.content)}
+                </p>
+
+                <p className="mt-4 text-sm text-stone-500">
+                    {article.author_name || "Unknown author"} ·{" "}
+                    {formatDate(article.published_at || article.created_at)}
+                </p>
+
+                <Link
+                    to={`/blogs/${article.slug}`}
+                    className="inline-block mt-6 border border-teal-700 text-teal-700 hover:bg-teal-700 hover:text-white px-6 py-2 transition"
+                >
+                    Read more
+                </Link>
+            </div>
+        </article>
     );
 }
 
+function PostSkeleton() {
+    return (
+        <div className="animate-pulse space-y-16 py-12">
+            {[1, 2].map((item) => (
+                <div key={item} className="flex flex-col md:flex-row gap-10 md:gap-20">
+                    <div className="w-full md:flex-1 h-64 md:h-96 bg-stone-200" />
+                    <div className="w-full md:flex-1 space-y-4">
+                        <div className="h-8 w-3/4 bg-stone-200" />
+                        <div className="h-4 w-full bg-stone-200" />
+                        <div className="h-4 w-5/6 bg-stone-200" />
+                        <div className="h-10 w-32 bg-stone-200" />
+                    </div>
+                </div>
+            ))}
+        </div>
+    );
+}
+
+/* ---------- Page ---------- */
+
 function Home() {
-    const [featured, ...rest] = articles;
+    const [articles, setArticles] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState(false);
+
+    // Category filter lives in the URL: /?cat=art
+    const [searchParams] = useSearchParams();
+    const activeCategory = (searchParams.get("cat") || "").toLowerCase();
+
+    const fetchArticles = async () => {
+        try {
+            setLoading(true);
+            setError(false);
+
+            const response = await api.get("/blogs/");
+            const data = response.data;
+            const blogList = Array.isArray(data) ? data : data.results || [];
+
+            setArticles(
+                [...blogList].sort(
+                    (a, b) =>
+                        new Date(b.published_at || b.created_at) -
+                        new Date(a.published_at || a.created_at)
+                )
+            );
+        } catch (err) {
+            console.error("Failed to load homepage articles:", err);
+            setError(true);
+            toast.error("Unable to load the latest articles.");
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    useEffect(() => {
+        fetchArticles();
+    }, []);
+
+    // Build the category list from the articles themselves
+    const categories = [
+        ...new Set(articles.map(getCategory).filter(Boolean)),
+    ];
+
+    const visibleArticles = activeCategory
+        ? articles.filter(
+              (article) => getCategory(article).toLowerCase() === activeCategory
+          )
+        : articles;
 
     return (
-        <div className="bg-stone-50 text-stone-900">
+        <div className="bg-white text-stone-900">
+            <div className="max-w-6xl mx-auto px-4">
 
-            {/* Hero */}
-            <section className="max-w-6xl mx-auto px-4 pt-16 pb-20 md:pt-24 grid md:grid-cols-2 gap-12 items-center">
-                <div>
-                    <h1 className="font-serif text-4xl sm:text-5xl lg:text-6xl font-bold leading-[1.1] tracking-tight">
-                        Read and share ideas that matter.
-                    </h1>
-
-                    <p className="mt-6 text-lg text-stone-600 leading-8 max-w-md">
-                        Read articles from our community, or create an account and publish your own.
-                    </p>
-
-                    <div className="mt-8 flex flex-wrap gap-3">
-                        <a
-                            href="#articles"
-                            className="inline-flex items-center gap-2 bg-stone-900 hover:bg-stone-700 text-white px-6 py-3 rounded-full font-medium transition"
-                        >
-                            Read articles <ArrowRight size={18} />
-                        </a>
+                {/* Category filter (only shown if your articles have categories) */}
+                {categories.length > 0 && (
+                    <nav
+                        id="categories"
+                        aria-label="Categories"
+                        className="flex flex-wrap items-center gap-x-6 gap-y-2 py-5 border-b border-stone-200 scroll-mt-20"
+                    >
                         <Link
-                            to="/register"
-                            className="inline-flex items-center border border-stone-300 hover:border-stone-900 px-6 py-3 rounded-full font-medium transition"
+                            to="/"
+                            className={`text-sm font-medium ${
+                                !activeCategory
+                                    ? "text-teal-700 underline underline-offset-8"
+                                    : "text-stone-600 hover:text-teal-700"
+                            }`}
                         >
-                            Start writing
+                            All
                         </Link>
-                    </div>
-                </div>
 
-                <img
-                    src="https://images.unsplash.com/photo-1516321318423-f06f85e504b3?w=1200"
-                    alt=""
-                    className="w-full h-72 md:h-[420px] object-cover rounded-3xl"
-                />
-            </section>
-
-            {/* Latest articles */}
-            <section id="articles" className="max-w-6xl mx-auto px-4 pb-20 scroll-mt-20">
-                <div className="flex items-end justify-between border-b border-stone-200 pb-4">
-                    <h2 className="font-serif text-3xl font-bold">Latest articles</h2>
-                    <Link to="/blogs" className="text-sm font-medium text-indigo-700 hover:underline">
-                        View all
-                    </Link>
-                </div>
-
-                {/* Featured */}
-                <Link
-                    to={`/blogs/${featured.slug}`}
-                    className="group mt-8 grid md:grid-cols-2 gap-8 items-center"
-                >
-                    <img
-                        src={featured.image}
-                        alt=""
-                        className="w-full h-64 md:h-80 object-cover rounded-2xl"
-                    />
-                    <div>
-                        <span className="text-sm font-semibold text-indigo-700">{featured.category}</span>
-                        <h3 className="mt-2 font-serif text-3xl md:text-4xl font-bold leading-tight group-hover:text-indigo-700 transition">
-                            {featured.title}
-                        </h3>
-                        <p className="mt-4 text-stone-600 leading-7">{featured.description}</p>
-                        <div className="mt-5"><Meta article={featured} /></div>
-                    </div>
-                </Link>
-
-                {/* Other articles */}
-                <div className="mt-14 grid sm:grid-cols-2 gap-10">
-                    {rest.map((article) => (
-                        <Link key={article.id} to={`/blogs/${article.slug}`} className="group block">
-                            <img
-                                src={article.image}
-                                alt=""
-                                className="w-full h-52 object-cover rounded-2xl"
-                            />
-                            <span className="mt-5 block text-sm font-semibold text-indigo-700">
-                                {article.category}
-                            </span>
-                            <h3 className="mt-1 font-serif text-2xl font-bold leading-snug group-hover:text-indigo-700 transition">
-                                {article.title}
-                            </h3>
-                            <p className="mt-2 text-stone-600 leading-7">{article.description}</p>
-                            <div className="mt-3"><Meta article={article} /></div>
-                        </Link>
-                    ))}
-                </div>
-            </section>
-
-            {/* Topics */}
-            <section id="categories" className="bg-white border-y border-stone-200 scroll-mt-20">
-                <div className="max-w-6xl mx-auto px-4 py-16">
-                    <h2 className="font-serif text-3xl font-bold">Browse by topic</h2>
-
-                    <div className="mt-8 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                        {categories.map((category) => (
+                        {categories.map((name) => (
                             <Link
-                                key={category.name}
-                                to={`/blogs?category=${category.name.toLowerCase()}`}
-                                className="block rounded-2xl bg-stone-50 hover:bg-indigo-50 border border-stone-200 hover:border-indigo-300 p-6 transition"
+                                key={name}
+                                to={`/?cat=${encodeURIComponent(name.toLowerCase())}`}
+                                className={`text-sm font-medium ${
+                                    activeCategory === name.toLowerCase()
+                                        ? "text-teal-700 underline underline-offset-8"
+                                        : "text-stone-600 hover:text-teal-700"
+                                }`}
                             >
-                                <h3 className="font-serif text-xl font-bold">{category.name}</h3>
-                                <p className="mt-1 text-sm text-stone-600">{category.text}</p>
+                                {name}
                             </Link>
                         ))}
-                    </div>
-                </div>
-            </section>
+                    </nav>
+                )}
 
-            {/* Join */}
-            <section id="about" className="max-w-6xl mx-auto px-4 py-20 scroll-mt-20">
-                <div className="rounded-3xl bg-indigo-700 text-white px-6 py-14 md:px-16 text-center">
-                    <h2 className="font-serif text-3xl md:text-4xl font-bold">
-                        Have something to share?
-                    </h2>
-                    <p className="mt-4 text-indigo-100 leading-8 max-w-xl mx-auto">
-                        BlogApp is a place to read, write and connect through articles.
-                        Create a free account to publish your first story.
-                    </p>
-                    <Link
-                        to="/register"
-                        className="inline-block mt-8 bg-white text-indigo-800 hover:bg-indigo-50 px-7 py-3 rounded-full font-medium transition"
-                    >
-                        Create an account
-                    </Link>
-                </div>
-            </section>
+                {/* Posts */}
+                <section id="articles" className="scroll-mt-20">
+                    {loading && <PostSkeleton />}
 
+                    {!loading && error && (
+                        <div className="py-24 text-center">
+                            <h2 className="text-2xl font-bold">We couldn't load the articles</h2>
+                            <p className="mt-2 text-stone-600">
+                                Check your connection and try again.
+                            </p>
+                            <button
+                                type="button"
+                                onClick={fetchArticles}
+                                className="mt-6 border border-teal-700 text-teal-700 hover:bg-teal-700 hover:text-white px-6 py-2 transition"
+                            >
+                                Try again
+                            </button>
+                        </div>
+                    )}
+
+                    {!loading && !error && visibleArticles.length === 0 && (
+                        <div className="py-24 text-center">
+                            <h2 className="text-2xl font-bold">
+                                {activeCategory ? "No articles in this category" : "No articles yet"}
+                            </h2>
+                            <p className="mt-2 text-stone-600">
+                                {activeCategory
+                                    ? "Try another category."
+                                    : "Be the first to publish something here."}
+                            </p>
+                            <Link
+                                to={activeCategory ? "/" : "/register"}
+                                className="inline-block mt-6 border border-teal-700 text-teal-700 hover:bg-teal-700 hover:text-white px-6 py-2 transition"
+                            >
+                                {activeCategory ? "View all articles" : "Start writing"}
+                            </Link>
+                        </div>
+                    )}
+
+                    {!loading && !error && visibleArticles.length > 0 && (
+                        <div className="divide-y divide-stone-200">
+                            {visibleArticles.map((article, index) => (
+                                <PostRow key={article.id} article={article} index={index} />
+                            ))}
+                        </div>
+                    )}
+                </section>
+
+                {/* About */}
+                <p
+                    id="about"
+                    className="py-12 border-t border-stone-200 text-sm text-stone-500 text-center scroll-mt-20"
+                >
+                    BlogApp is a place for readers and writers to share knowledge and ideas.
+                </p>
+            </div>
         </div>
     );
 }
