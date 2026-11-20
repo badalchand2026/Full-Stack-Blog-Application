@@ -172,3 +172,10 @@ SIMPLE_JWT = {
 # Media files configuration
 MEDIA_URL = "/media/"
 MEDIA_ROOT = BASE_DIR / "media"
+
+ALLOWED_HOSTS = ["localhost", "127.0.0.1", ".trycloudflare.com"]
+
+CSRF_TRUSTED_ORIGINS = ["https://*.trycloudflare.com"]
+
+# If you use django-cors-headers:
+CORS_ALLOWED_ORIGIN_REGEXES = [r"^https://.*\.trycloudflare\.com$"]

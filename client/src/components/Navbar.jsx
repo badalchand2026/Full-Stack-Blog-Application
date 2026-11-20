@@ -71,32 +71,7 @@ function Navbar() {
                 </Link>
 
                 {/* Desktop Navigation */}
-                <div className="hidden md:flex items-center gap-9">
-                    <NavLink to="/" end className={navClass}>
-                        Home
-                    </NavLink>
 
-                    <a
-                        href="/#articles"
-                        className="text-sm font-medium text-gray-600 hover:text-indigo-600"
-                    >
-                        Articles
-                    </a>
-
-                    <a
-                        href="/#categories"
-                        className="text-sm font-medium text-gray-600 hover:text-indigo-600"
-                    >
-                        Categories
-                    </a>
-
-                    <a
-                        href="/#about"
-                        className="text-sm font-medium text-gray-600 hover:text-indigo-600"
-                    >
-                        About
-                    </a>
-                </div>
 
                 {/* Desktop Authentication */}
                 <div className="hidden md:flex items-center gap-5">
