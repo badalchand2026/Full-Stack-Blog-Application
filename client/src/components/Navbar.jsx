@@ -148,29 +148,9 @@ function Navbar() {
                         Home
                     </NavLink>
 
-                    <a
-                        onClick={closeMenu}
-                        href="/#articles"
-                        className="block text-gray-700 font-medium"
-                    >
-                        Articles
-                    </a>
 
-                    <a
-                        onClick={closeMenu}
-                        href="/#categories"
-                        className="block text-gray-700 font-medium"
-                    >
-                        Categories
-                    </a>
 
-                    <a
-                        onClick={closeMenu}
-                        href="/#about"
-                        className="block text-gray-700 font-medium"
-                    >
-                        About
-                    </a>
+
 
                     {isAuthenticated ? (
                         <div className="border-t border-gray-100 pt-5 space-y-4">
